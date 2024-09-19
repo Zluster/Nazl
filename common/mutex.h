@@ -14,6 +14,33 @@
 #include "noncopyable.h"
 namespace Nazl {
 
+class Semaphore : public Nazl::Noncopable {
+public:
+    Semaphore(int32_t count = 0) {
+        if (sem_init(&sem_, 0, count)) {
+            throw std::runtime_error("sem_init failed");
+        }
+    }
+    ~Semaphore() {
+        if (sem_destroy(&sem_)) {
+            throw std::runtime_error("sem_destroy failed");
+        }
+    }
+    void notify() {
+        if (sem_post(&sem_)) {
+            throw std::runtime_error("sem_post failed");
+        }
+    }
+    void wait() {
+        if (sem_wait(&sem_)) {
+            throw std::runtime_error("sem_wait failed");
+        }
+    }
+private:
+    sem_t sem_;
+};
+
+
 template <typename T>
 class ScopedLockImpl{
 public:
@@ -41,7 +68,90 @@ private:
     T& mutex_;
     bool locked_;
 };
+template <class T>
+class ReadScopedLockImpl {
+public:
+    ReadScopedLockImpl(T& mutex):mutex_(mutex) {
+        mutex_.rdlock();
+        locked_ = true;
+    }
+    ~ReadScopedLockImpl() {
+        unlock();
+    }
+    void lock() {
+        if (!locked_) {
+            mutex_.rdlock();
+            locked_ = true;
+        }
+    }
 
+    void unlock() {
+        if (locked_) {
+            mutex_.unlock();
+            locked_ = false;
+        }
+    }
+private:
+    T& mutex_;
+    bool locked_;
+};
+
+template <class T>
+class WriteScopedLockImpl {
+public:
+    WriteScopedLockImpl(T& mutex):mutex_(mutex) {
+        mutex_.wrlock();
+        locked_ = true;
+    }
+    ~WriteScopedLockImpl() {
+        unlock();
+    }
+    void lock() {
+        if (!locked_) {
+            mutex_.wrlock();
+            locked_ = true;
+        }
+    }
+
+    void unlock() {
+        if (locked_) {
+            mutex_.unlock();
+            locked_ = false;
+        }
+    }
+private:
+    T& mutex_;
+    bool locked_;
+};
+
+class RWMutex: public Nazl::Noncopyable {
+public:
+    typedef ReadScopedLockImpl<RWMutex> ReadLock;
+    typedef WriteScopedLockImpl<RWMutex> WriteLock;
+
+    RWMutex() {
+        pthread_rwlock_init(&rwlock_, nullptr);
+    }
+
+    ~RWMutex() {
+        pthread_rwlock_destroy(&rwlock_);
+    }
+
+    void rdlock() {
+        pthread_rwlock_rdlock(&rwlock_);
+    }
+
+    void wrlock() {
+        pthread_rwlock_wrlock(&rwlock_);
+    }
+
+    void unlock() {
+        pthread_rwlock_unlock(&rwlock_);
+    }
+
+private:
+    pthread_rwlock_t rwlock_;
+};
 class Mutex: public Nazl::Noncopyable {
 public:
     typedef ScopedLockImpl<Mutex> Lock;
@@ -105,6 +215,55 @@ public:
     }
 private:
     volatile std::atomic_flag mutex_;
+};
+class ConditionVariable {
+public:
+    ConditionVariable() {
+        if (pthread_cond_init(&cond_, nullptr)) {
+            throw std::runtime_error("pthread_cond_init failed");
+        }
+        if (pthread_mutex_init(&mutex_, nullptr)) {
+            throw std::runtime_error("pthread_mutex_init failed");
+        }
+    }
+
+    ~ConditionVariable() {
+        if (pthread_cond_destroy(&cond_)) {
+            throw std::runtime_error("pthread_cond_destroy failed");
+        }
+        if (pthread_mutex_destroy(&mutex_)) {
+            throw std::runtime_error("pthread_mutex_destroy failed");
+        }
+    }
+
+    void wait() {
+        if (pthread_mutex_lock(&mutex_)) {
+            throw std::runtime_error("pthread_mutex_lock failed");
+        }
+        if (pthread_cond_wait(&cond_, &mutex_)) {
+            pthread_mutex_unlock(&mutex_);
+            throw std::runtime_error("pthread_cond_wait failed");
+        }
+        if (pthread_mutex_unlock(&mutex_)) {
+            throw std::runtime_error("pthread_mutex_unlock failed");
+        }
+    }
+
+    void notify() {
+        if (pthread_cond_signal(&cond_)) {
+            throw std::runtime_error("pthread_cond_signal failed");
+        }
+    }
+
+    void notifyAll() {
+        if (pthread_cond_broadcast(&cond_)) {
+            throw std::runtime_error("pthread_cond_broadcast failed");
+        }
+    }
+
+private:
+    pthread_cond_t cond_;
+    pthread_mutex_t mutex_;
 };
 }
 
