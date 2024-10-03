@@ -3,7 +3,17 @@
 //
 #include <iostream>
 #include "log.h"
-int main() {
+int main()
+{
     std::cout << "hello world" << std::endl;
+    log_init();
+    while (1)
+    {
+        LOG_INFO("aaaa");
+        LOG_DEBUG("bbbb");
+        LOG_ERROR("cccc");
+    }
+
+
     return 0;
 }
