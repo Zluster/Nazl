@@ -5,11 +5,14 @@
 #ifndef COMMON_SINGLETON_H
 #define COMMON_SINGLETON_H
 #include <memory>
-namespace Nazl{
+namespace Nazl
+{
 template<typename T>
-class Singleton{
+class Singleton
+{
 public:
-    static T& getInstance(){
+    static T& GetInstance()
+    {
         static T instance;
         return instance;
     }
@@ -20,8 +23,10 @@ private:
     ~Singleton() = default;
 };
 template<typename T>
-class SingletonPtr{
-    static std::shared_ptr<T> getInstance(){
+class SingletonPtr
+{
+    static std::shared_ptr<T> GetInstance()
+    {
         static std::shared_ptr<T> instance(new T());
         return instance;
     }
@@ -31,5 +36,5 @@ private:
     SingletonPtr& operator=(const SingletonPtr&) = delete;
     ~SingletonPtr() = default;
 };
-};
+}
 #endif //COMMON_SINGLETON_H

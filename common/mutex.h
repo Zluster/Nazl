@@ -9,12 +9,13 @@
 #include <functional>
 #include <memory>
 #include <pthread.h>
-#include <semaphore>
 #include <atomic>
+#include <semaphore.h>
+#include <iostream>
 #include "noncopyable.h"
 namespace Nazl {
 
-class Semaphore : public Nazl::Noncopable {
+class Semaphore : public Nazl::Noncopyable {
 public:
     Semaphore(int32_t count = 0) {
         if (sem_init(&sem_, 0, count)) {
@@ -23,7 +24,7 @@ public:
     }
     ~Semaphore() {
         if (sem_destroy(&sem_)) {
-            throw std::runtime_error("sem_destroy failed");
+            std::cout << "sem_destroy failed" << std::endl;
         }
     }
     void notify() {
@@ -229,10 +230,10 @@ public:
 
     ~ConditionVariable() {
         if (pthread_cond_destroy(&cond_)) {
-            throw std::runtime_error("pthread_cond_destroy failed");
+            std::cerr << "pthread_cond_destroy failed" << std::endl;
         }
         if (pthread_mutex_destroy(&mutex_)) {
-            throw std::runtime_error("pthread_mutex_destroy failed");
+            std::cerr << "pthread_mutex_destroy failed" << std::endl;
         }
     }
 
