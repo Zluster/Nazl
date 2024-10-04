@@ -3,8 +3,8 @@
 //
 #include <iostream>
 #include "log.h"
-
-LogFormat::LogFormat()
+#include "config.h"
+LogFormat::LogFormat(std::string pattern) : pattern_(pattern)
 {
     ParsePattern();
 }
@@ -112,7 +112,7 @@ FileSink::FileSink(const std::string &file_name, std::size_t max_size, std::size
     file_ops_.open(file_name_);
     std::cout << "open file " << file_name_ << std::endl;
     current_size_ = file_ops_.size();
-    if (current_size_ > 0)
+    if (current_size_ > max_size_)
     {
         Rotate();
         current_size_ = 0;
@@ -191,7 +191,33 @@ std::string LogLevel::GetLevelString()
         return "UNKNOWN";
     }
 }
+static LogLevel::LevelEnum stringToLevel(const std::string& levelStr)
+{
+    std::string levelUpper = levelStr;
+    std::transform(levelUpper.begin(), levelUpper.end(), levelUpper.begin(), ::toupper);
 
+    if (levelUpper == "DEBUG")
+    {
+        return LogLevel::LevelEnum::Debug;
+    }
+    if (levelUpper == "INFO")
+    {
+        return LogLevel::LevelEnum::Info;
+    }
+    if (levelUpper == "WARNING")
+    {
+        return LogLevel::LevelEnum::Warn;
+    }
+    if (levelUpper == "ERROR")
+    {
+        return LogLevel::LevelEnum::Error;
+    }
+    if (levelUpper == "FATAL")
+    {
+        return LogLevel::LevelEnum::Fatal;
+    }
+    return LogLevel::LevelEnum::Debug;
+}
 void Logger::SetFormatter(std::shared_ptr <LogFormat> format)
 {
     for (auto it = sinks_.begin(); it != sinks_.end(); ++it)
@@ -243,16 +269,89 @@ enabled: true
 level: debug
 */
 
-int32_t log_init()
+int32_t log_init(const std::string &name)
 {
-    std::shared_ptr <StdoutSink> sink = std::make_shared<StdoutSink>();
-    sink->SetLevel(LogLevel(LogLevel::LevelEnum::Info));
-    std::shared_ptr <FileSink> file_sink = std::make_shared<FileSink>("logs/app.log", 1024 * 1024, 10);
-    sink->SetLevel(LogLevel(LogLevel::LevelEnum::Info));
-    std::vector<std::shared_ptr<Sink>> sinks = {/*sink,*/ file_sink};
+    std::string log_level, log_pattern, file_path;
+    int max_size = 0, max_files = 0;
+    std::vector<std::shared_ptr<Sink>> sinks;
+    bool stdoutEnabled, fileSinkEnabled;
+    Nazl::Config config("../conf/log_config.yml");
+    if (!config.loadItemsFromYaml())
+    {
+        std::cerr << "Error loading configuration file." << std::endl;
+        return -1;
+    }
+    auto baseKey = "logger." + name;
+    std::cout << "baseKey: " << baseKey << std::endl;
+    if (!config.hasItem(baseKey, false))
+    {
+        auto sink = std::make_shared<StdoutSink>();
+        sink->SetLevel(LogLevel(LogLevel::LevelEnum::Info));
+        sinks.emplace_back(sink);
+        std::cout << "No log config found, use default stdout sink." << std::endl;
+    }
+    else
+    {
+        std::cout << "log config found." << std::endl;
+        auto itemPtr = config.getItem<std::string>(baseKey + ".stdout_sink.enabled");
+        if (itemPtr && itemPtr->getValue() == "true")
+        {
+            std::cout << "stdout sink enabled." << std::endl;
+            stdoutEnabled = true;
+        }
+        itemPtr = config.getItem<std::string>(baseKey + ".file_sink.enabled");
+        if (itemPtr && itemPtr->getValue() == "true")
+        {
+            std::cout << "file sink enabled." << std::endl;
+            fileSinkEnabled = true;
+        }
+        if (stdoutEnabled)
+        {
+            log_level = config.getItem<std::string>(baseKey + ".stdout_sink.level")->getValue();
+            log_pattern = config.getItem<std::string>(baseKey + ".stdout_sink.format")->getValue();
+            auto sink = std::make_shared<StdoutSink>();
+            sink->SetLevel(LogLevel(stringToLevel(log_level)));
+            sink->SetFormat(std::make_shared<LogFormat>(log_pattern));
+            sinks.emplace_back(sink);
+        }
+
+        if (fileSinkEnabled)
+        {
+            file_path = config.getItem<std::string>(baseKey + ".file_sink.file_path")->getValue();
+            if (config.hasItem(baseKey + ".file_sink.max_file_size"))
+            {
+                auto maxSizeItem = config.getItem<int>(baseKey + ".file_sink.max_file_size");
+                if (maxSizeItem)
+                {
+                    max_size = maxSizeItem->getValue();
+                }
+                else
+                {
+                    std::cerr << "Pointer is null for the config item: " << baseKey + ".file_sink.max_file_size" << std::endl;
+                    // 处理错误，例如设置默认值或返回错误码
+                    max_size = 232323; // 假设有一个默认值
+                }
+            }
+            else
+            {
+                std::cerr << "Configuration item not found for key: " << baseKey + ".file_sink.max_file_size" << std::endl;
+                // 处理错误，例如设置默认值或返回错误码
+                max_size = 232323; // 假设有一个默认值
+            }
+            max_size = config.getItem<int>(baseKey + ".file_sink.max_file_size")->getValue();
+            max_files = config.getItem<int>(baseKey + ".file_sink.max_files")->getValue();
+            log_level = config.getItem<std::string>(baseKey + ".file_sink.level")->getValue();
+            log_pattern = config.getItem<std::string>(baseKey + ".file_sink.format")->getValue();
+            auto sink = std::make_shared<FileSink>(file_path, max_size, max_files);
+            sink->SetLevel(LogLevel(stringToLevel(log_level)));
+            sink->SetFormat(std::make_shared<LogFormat>(log_pattern));
+            sinks.emplace_back(sink);
+        }
+    }
+    std::cout << "sinks.size(): " << sinks.size() << std::endl;
     std::shared_ptr<Logger> logger = std::make_shared<Logger>("default", sinks.begin(), sinks.end());
-    logger->SetFormatter(std::make_shared<LogFormat>());
     LogManager& logManager = logger_manager::GetInstance();
     logManager.RegisterLogger(logger);
+    LOG_INFO("Logger %s initialized,file_sink:%s, stdout:%s", name.c_str(), fileSinkEnabled ? "true" : "false", stdoutEnabled ? "true" : "false");
     return 0;
 }

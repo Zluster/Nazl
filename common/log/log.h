@@ -9,6 +9,7 @@
 #include <ctime>
 #include <iomanip>
 #include <fmt/core.h>
+#include <fmt/printf.h>
 #include "mutex.h"
 #include "file_ops.h"
 #include "singleton.h"
@@ -173,7 +174,7 @@ public:
 class LogFormat
 {
 public:
-    LogFormat();
+    LogFormat(std::string pattern = "");
     ~LogFormat() = default;
     std::string Format(std::shared_ptr<LogEvent> event);
     void Format(std::ostream &os, std::shared_ptr<LogEvent> event);
@@ -289,7 +290,7 @@ void LOG_COMMON(LogLevel level, const std::string& logger_name, const std::strin
         std::cerr << "Logger not found!" << std::endl;
         return;
     }
-    std::string message = fmt::format(format, std::forward<Args>(args)...);
+    std::string message = fmt::sprintf(format, std::forward<Args>(args)...);
     auto event = std::make_shared<LogEvent>(file, func, "ThreadName", line, 1234, std::time(nullptr), level, message);
     logger->SinkIt(event);
 }
@@ -302,5 +303,5 @@ void LOG_COMMON(LogLevel level, const std::string& logger_name, const std::strin
 #define LOG_WARN(format, ...) LOG_COMMON_IMPL(LogLevel::LevelEnum::Warn, "", format, ##__VA_ARGS__)
 #define LOG_ERROR(format, ...) LOG_COMMON_IMPL(LogLevel::LevelEnum::Error, "", format, ##__VA_ARGS__)
 #define LOG_FATAL(format, ...) LOG_COMMON_IMPL(LogLevel::LevelEnum::Fatal, "", format, ##__VA_ARGS__)
-int32_t log_init();
+int32_t log_init(const std::string& name);
 #endif

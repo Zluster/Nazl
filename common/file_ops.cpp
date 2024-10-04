@@ -59,15 +59,12 @@ void FileOps::open(const std::string& file_name, bool truncate)
             exit(1);
         }
     }
-
-    std::cout << "Attempting to open file: " << file_name_ << " with mode: " << (truncate ? "w+b" : "r+b") << std::endl;
-
     if (truncate)
     {
         ::unlink(file_name_.c_str());
     }
 
-    fd_ = ::fopen(file_name_.c_str(), "w+b");
+    fd_ = ::fopen(file_name_.c_str(), "a+b");
     if (fd_ == nullptr)
     {
         perror(("Failed to open file " + file_name_).c_str());

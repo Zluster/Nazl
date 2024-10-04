@@ -1,31 +1,25 @@
 cmake_minimum_required(VERSION 3.10)
 
-# 项目名称和版本
-project(Nazl VERSION 1.0)
-
-# 设置 C++ 标准
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED True)
-add_compile_options(-g)
-# 查找线程库
 find_package(Threads REQUIRED)
 find_package(yaml-cpp REQUIRED)
 find_package(fmt REQUIRED)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
-# 包含头文件目录
-include_directories(${PROJECT_SOURCE_DIR})
-include_directories(${PROJECT_SOURCE_DIR}/log)
-include_directories(${PROJECT_SOURCE_DIR}/pool)
-# 添加可执行文件，显式列出所有源文件
-add_executable(test_log
-        example/test_log.cpp
+add_library(common SHARED
         config.cpp
+       # timer.cpp
         file_ops.cpp
         log/log.cpp
         pool/thread_pool.cpp
-        # 确保此处列出的为实际需要的所有源文件
-        # 例如, 另需 source1.cpp source2.cpp
 )
 
-# 链接需要的库
-target_link_libraries(test_log PRIVATE Threads::Threads yaml-cpp fmt::fmt)
+target_link_libraries(common PUBLIC Threads::Threads yaml-cpp fmt::fmt)
+target_include_directories(common PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/log
+        ${CMAKE_CURRENT_SOURCE_DIR}/pool)
+install(TARGETS common
+        LIBRARY DESTINATION lib
+        RUNTIME DESTINATION bin
+)
+install(FILES config.h file_ops.h log/log.h pool/thread_pool.h DESTINATION include)

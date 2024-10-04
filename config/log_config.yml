@@ -1,0 +1,37 @@
+logger:
+  process1:
+    stdout_sink:
+      enabled: true
+      level: INFO
+      format: "%T %L  %f %l  %m %E"
+    file_sink:
+      enabled: true
+      file_path: "./logs/app.log"
+      format: "%T %L  %f %l  %m %E"
+      max_file_size: 5242880  #1024 * 1024 *5
+      max_files: 5
+      level: INFO
+  process2:
+    stdout_sink:
+      enabled: true
+      level: DEBUG
+      format: "%T %L  %f %l  %m %E"
+    file_sink:
+      enabled: true
+      file_path: "./logs/app2.log"
+      format: "%T %L  %f %l  %m %E"
+      max_file_size: 5242880  #1024 * 1024 *5
+      max_files: 5
+      level: INFO
+  process3:
+    stdout_sink:
+      enabled: true
+      level: WARN
+      format: "%T %L  %f %l  %m %E"
+    file_sink:
+      enabled: true
+      file_path: "./logs/app3.log"
+      format: "%T %L  %f %l  %m %E"
+      max_file_size: 5242880  #1024 * 1024 *5
+      max_files: 5
+      level: INFO

@@ -7,23 +7,15 @@
 
 namespace Nazl
 {
-template <typename T>
-template <typename V>
-std::shared_ptr<ConfigItem<V>> Config<T>::getItem(const std::string &name, const V &defaultValue)
-{
-    MutexType::Lock lock(mutex_);
-    auto it = items_.find(name);
-    if (it != items_.end())
-    {
-        return std::dynamic_pointer_cast<ConfigItem<V>>(it->second);
-    }
-    auto var = std::make_shared<ConfigItem<V>>(name, defaultValue);
-    items_[name] = var;
-    return var;
-}
 
-template <typename T>
-bool Config<T>::loadItemsFromYaml()
+
+template <>
+bool ConfigItem<std::string>::fromString(const std::string &str)
+{
+    setValue(str);
+    return true;
+}
+bool Config::loadItemsFromYaml()
 {
     if (fileName_.empty())
     {
@@ -38,8 +30,7 @@ bool Config<T>::loadItemsFromYaml()
     return true;
 }
 
-template <typename T>
-void Config<T>::loadFromYamlNode(const YAML::Node &node, const std::string &prefix)
+void Config::loadFromYamlNode(const YAML::Node &node, const std::string &prefix)
 {
     if (node.IsMap())
     {
@@ -59,8 +50,59 @@ void Config<T>::loadFromYamlNode(const YAML::Node &node, const std::string &pref
     }
     else
     {
-        auto item = getItem(prefix, node.as<T>());
-        item->fromString(node.as<std::string>());
+        if (node.IsScalar())
+        {
+            std::string valueStr = node.as<std::string>();
+            std::regex intRegex("^-?\\d+$"); // Matches optional leading '-' followed by digits
+            try
+            {
+                if (node.Tag() == "tag:yaml.org,2002:int" || std::regex_match(valueStr, intRegex))
+                {
+                    int value = node.as<int>();
+                    auto item = std::make_shared<ConfigItem<int>>(prefix, value);
+                    items_[prefix] = item;
+                    std::cout << "Loaded config item (int): " << prefix << " = " << value << std::endl;
+                }
+                else if (node.Tag() == "tag:yaml.org,2002:bool")
+                {
+                    bool value = node.as<bool>();
+                    auto item = std::make_shared<ConfigItem<bool>>(prefix, value);
+                    items_[prefix] = item;
+                    std::cout << "Loaded config item (bool): " << prefix << " = " << value << std::endl;
+                }
+                else
+                {
+                    std::string value = node.as<std::string>();
+                    auto item = std::make_shared<ConfigItem<std::string>>(prefix, value);
+                    items_[prefix] = item;
+                    std::cout << "Loaded config item (string): " << prefix << " = " << item->toString() << std::endl;
+                }
+            }
+            catch (const std::exception &e)
+            {
+                std::cerr << "Error loading config item for key: " << prefix << " - " << e.what() << std::endl;
+            }
+        }
+    }
+}
+
+bool Config::hasItem(const std::string & name, bool exactMatch)
+{
+    MutexType::Lock lock(mutex_);
+    if (exactMatch)
+    {
+        return items_.find(name) != items_.end();
+    }
+    else
+    {
+        for (const auto& item : items_)
+        {
+            if (item.first.find(name) == 0)
+            {
+                return true;
+            }
+        }
+        return false;
     }
 }
 }
