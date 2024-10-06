@@ -70,28 +70,28 @@ void LogFormat::ParsePattern()
 
 void StdoutSink::Log(std::shared_ptr<LogEvent> event)
 {
-    MutexType::Lock lock(mutex_);
+    std::lock_guard<std::mutex> lock(mutex_);
     format_->Format(std::cout, event);
     ::fflush(stdout);
 }
 void StdoutSink::Flush()
 {
-    MutexType::Lock lock(mutex_);
+    std::lock_guard<std::mutex> lock(mutex_);
     ::fflush(stdout);
 }
 void StdoutSink::SetFormat(std::shared_ptr <LogFormat> format)
 {
-    MutexType::Lock lock(mutex_);
+    std::lock_guard<std::mutex> lock(mutex_);
     format_ = std::move(format);
 }
 void StdoutSink::SetLevel(LogLevel log_level)
 {
-    MutexType::Lock lock(mutex_);
+    std::lock_guard<std::mutex> lock(mutex_);
     level_ = log_level;
 }
 LogLevel StdoutSink::GetLevel()
 {
-    MutexType::Lock lock(mutex_);
+    std::lock_guard<std::mutex> lock(mutex_);
     return level_;
 }
 FileSink::FileSink(const std::string &file_name, std::size_t max_size, std::size_t max_files, Nazl::FileOps&& file_ops)
@@ -120,7 +120,7 @@ FileSink::FileSink(const std::string &file_name, std::size_t max_size, std::size
 }
 void FileSink::Log(std::shared_ptr<LogEvent> event)
 {
-    MutexType::Lock lock(mutex_);
+    std::lock_guard<std::mutex> lock(mutex_);
     std::string buffer = format_->Format(event);
     size_t new_size = current_size_ + buffer.size();
     if (new_size + buffer.size() > max_size_)
@@ -134,22 +134,22 @@ void FileSink::Log(std::shared_ptr<LogEvent> event)
 }
 void FileSink::Flush()
 {
-    MutexType::Lock lock(mutex_);
+    std::lock_guard<std::mutex> lock(mutex_);
     file_ops_.flush();
 }
 void FileSink::SetFormat(std::shared_ptr <LogFormat> format)
 {
-    MutexType::Lock lock(mutex_);
+    std::lock_guard<std::mutex> lock(mutex_);
     format_ = std::move(format);
 }
 void FileSink::SetLevel(LogLevel log_level)
 {
-    MutexType::Lock lock(mutex_);
+    std::lock_guard<std::mutex> lock(mutex_);
     level_ = log_level;
 }
 LogLevel FileSink::GetLevel()
 {
-    MutexType::Lock lock(mutex_);
+    std::lock_guard<std::mutex> lock(mutex_);
     return level_;
 }
 void FileSink::Rotate()
@@ -234,13 +234,13 @@ void Logger::SinkIt(std::shared_ptr<LogEvent> event)
 }
 std::shared_ptr<Logger> LogManager::GetLogger(const std::string &name)
 {
-    MutexType::Lock lock(map_mutex_);
+    std::lock_guard<std::mutex> lock(map_mutex_);
     auto found = loggers_.find(name);
     return (found == loggers_.end()) ? nullptr : found->second;
 }
 std::shared_ptr<Logger> LogManager::GetDefaultLogger()
 {
-    MutexType::Lock lock(map_mutex_);
+    std::lock_guard<std::mutex> lock(map_mutex_);
     if (loggers_.empty())
     {
         return nullptr;

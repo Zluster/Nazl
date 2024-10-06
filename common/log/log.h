@@ -10,7 +10,9 @@
 #include <iomanip>
 #include <fmt/core.h>
 #include <fmt/printf.h>
-#include "mutex.h"
+#include <mutex>
+#include <thread>
+#include <unordered_map>
 #include "file_ops.h"
 #include "singleton.h"
 //Timestamp Level EOL Func Line Thread_name Thread_id message
@@ -202,7 +204,6 @@ protected:
 class StdoutSink : public Sink
 {
 public:
-    typedef Nazl::Mutex MutexType;
     StdoutSink() = default;
     ~StdoutSink() = default;
     StdoutSink(const StdoutSink&) = delete;
@@ -213,12 +214,11 @@ public:
     void SetLevel(LogLevel log_level) override;
     LogLevel GetLevel() override;
 private:
-    MutexType mutex_;
+    std::mutex mutex_;
 };
 class FileSink : public Sink
 {
 public:
-    typedef Nazl::Mutex MutexType;
     explicit FileSink(const std::string &file_name, std::size_t max_size, std::size_t max_files, Nazl::FileOps&& file_ops = Nazl::FileOps());
     ~FileSink() = default;
     void Log(std::shared_ptr<LogEvent> event) override;
@@ -235,7 +235,7 @@ private:
     std::size_t max_files_;
     std::size_t current_size_;
     Nazl::FileOps file_ops_;
-    MutexType mutex_;
+    std::mutex mutex_;
 };
 class Logger
 {
@@ -261,14 +261,13 @@ private:
 class LogManager
 {
 public:
-    typedef Nazl::Mutex MutexType;
     LogManager() = default;
     void RegisterLogger(std::shared_ptr<Logger> logger);
     std::shared_ptr<Logger> GetDefaultLogger();
     std::shared_ptr<Logger> GetLogger(const std::string &name);
 private:
     std::unordered_map<std::string, std::shared_ptr<Logger>> loggers_;
-    MutexType map_mutex_;
+    std::mutex map_mutex_;
 };
 typedef Nazl::Singleton<LogManager> logger_manager;
 

@@ -88,7 +88,7 @@ void Config::loadFromYamlNode(const YAML::Node &node, const std::string &prefix)
 
 bool Config::hasItem(const std::string & name, bool exactMatch)
 {
-    MutexType::Lock lock(mutex_);
+    std::unique_lock<std::mutex> lock(mutex_);
     if (exactMatch)
     {
         return items_.find(name) != items_.end();

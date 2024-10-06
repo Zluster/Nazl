@@ -1,18 +1,19 @@
-//
-// Created by zwz on 2024/9/22.
-//
 
 #ifndef NAZL_TIMER_H
 #define NAZL_TIMER_H
+
 #include <functional>
 #include <queue>
-#include <string>
-#include <list>
-#include <map>
+#include <unordered_map>
+#include <atomic>
+#include <thread>
 #include <condition_variable>
-#include "mutex.h"
+#include <iostream>
+#include <memory>
+
 namespace Nazl
 {
+
 class Timer
 {
 public:
@@ -27,66 +28,71 @@ public:
         bool valid_;
 
         TimerNode(int id, long long timeout, TimerCallback callback, bool periodic = false)
-            : id_(id), timeout_(timeout), callback_(callback), periodic_(periodic), when_(0), valid_(true) {}
+            : id_(id), timeout_(timeout), callback_(callback), periodic_(periodic), when_(0), valid_(false) {}
     };
 
     Timer(int id, long long timeout, TimerCallback callback, bool periodic)
-        : timerNode_(id, timeout * 1000, callback, periodic) {}
+        : timerNode_(std::make_shared<TimerNode>(id, timeout, callback, periodic)) {}
 
     bool start(long long currentTimeMicros);
     void stop();
-    const TimerNode& getTimerNode() const
+    std::shared_ptr<TimerNode> getTimerNode() const
     {
         return timerNode_;
     }
+    bool isValid() const
+    {
+        return timerNode_ && timerNode_->valid_;
+    }
 
 private:
-    TimerNode timerNode_;
+    std::shared_ptr<TimerNode> timerNode_;
 };
 
 class TimerMgr
 {
 public:
     typedef std::function<void()> TimerCallback;
-    class TimerNodeQueue
-    {
-    public:
-        using TimerNodeRefPtr = std::shared_ptr<Timer::TimerNode>;
-        using TimerNodeRefPtrList = std::deque<TimerNodeRefPtr>;
-        TimerNodeQueue() = default;
-        ~TimerNodeQueue() = default;
-        TimerNodeRefPtr next();
-        bool enqueueNode(const TimerNodeRefPtr& node);
-        void removeNode(int id);
-        bool hasNode(int id);
-
-    private:
-        TimerNodeRefPtrList timerNodeList_;
-        std::mutex mutex_;
-        std::condition_variable cond_;
-    };
+    using TimerNodeRefPtr = std::shared_ptr<Timer::TimerNode>;
 
     TimerMgr();
     ~TimerMgr();
+    template<typename Rep, typename Period>
+    Timer createTimer(const std::chrono::duration<Rep, Period>& timeout, TimerCallback callback, bool periodic = false)
+    {
+        auto timeoutMicros = std::chrono::duration_cast<std::chrono::microseconds>(timeout).count();
+        return createTimer(timeoutMicros, std::move(callback), periodic);
+    }
     Timer createTimer(long long timeoutMicros, TimerCallback callback, bool periodic = false);
     static long long currentTimeMicros();
     bool start(Timer& timer);
     void stop(Timer& timer);
+    void removeTimer(int id);
+    size_t getActiveTimerCount() const;
 
 private:
-    TimerNodeQueue timerNodeQueue_;
-    std::shared_ptr<TimerNodeQueue::TimerNodeRefPtrList> timerNodeList_;
+    struct CompareTimerNode
+    {
+        bool operator()(const TimerNodeRefPtr& lhs, const TimerNodeRefPtr& rhs) const
+        {
+            return lhs->when_ > rhs->when_;
+        }
+    };
+
+    void enqueueNode(const TimerNodeRefPtr& node);
+    TimerNodeRefPtr next();
+    void processTimerHandler();
+
+private:
+    std::priority_queue<TimerNodeRefPtr, std::vector<TimerNodeRefPtr>, CompareTimerNode> queue_;
+    std::unordered_map<int, TimerNodeRefPtr> nodeMap_;
     std::atomic<bool> mainThreadAlive{true};
-    std::thread timerTickThread_;
     std::thread timerHandlerThread_;
     std::atomic<size_t> timerId_{0};
-    std::mutex mutex_;
+    mutable std::mutex mutex_;
     std::condition_variable cond_;
-    void processTimerTick();
-    void processTimerHandler();
 };
 
-}
+} // namespace Nazl
 
-
-#endif //NAZL_TIMER_H
+#endif // NAZL_TIMER_H  

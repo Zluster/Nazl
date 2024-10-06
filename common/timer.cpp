@@ -1,77 +1,24 @@
-//
-// Created by zwz on 2024/9/22.
-//
-
 #include "timer.h"
+#include <chrono>
+
 namespace Nazl
 {
+
 bool Timer::start(long long currentTimeMicros)
 {
-    timerNode_.when_ = currentTimeMicros + timerNode_.timeout_;
+    timerNode_->when_ = currentTimeMicros + timerNode_->timeout_;
+    timerNode_->valid_ = true;
     return true;
 }
 
 void Timer::stop()
 {
-    timerNode_.valid_ = false;
+    timerNode_->valid_ = false;
 }
-
-TimerMgr::TimerNodeQueue::TimerNodeRefPtr TimerMgr::TimerNodeQueue::next()
-{
-    std::unique_lock<std::mutex> lock(mutex_);
-    cond_.wait(lock, [this] { return !timerNodeList_.empty();});
-
-    long long currentTimeMicros = TimerMgr::currentTimeMicros();
-    auto it = std::find_if(timerNodeList_.begin(), timerNodeList_.end(),
-                           [currentTimeMicros](const TimerNodeRefPtr & node)
-    {
-        return node->when_ <= currentTimeMicros;
-    });
-    if (it != timerNodeList_.end())
-    {
-        auto node = *it;
-        timerNodeList_.erase(it);
-        return node;
-    }
-    return nullptr;
-}
-bool TimerMgr::TimerNodeQueue::enqueueNode(const TimerNodeRefPtr& node)
-{
-    std::lock_guard<std::mutex> lock(mutex_);
-    node->valid_ = true;
-    timerNodeList_.push_back(node);
-    cond_.notify_one();
-    return true;
-}
-void TimerMgr::TimerNodeQueue::removeNode(int id)
-{
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto it = std::find_if(timerNodeList_.begin(), timerNodeList_.end(),
-                           [id](const TimerNodeRefPtr & node)
-    {
-        return node->id_ == id;
-    });
-    if (it != timerNodeList_.end())
-    {
-        timerNodeList_.erase(it);
-    }
-}
-bool TimerMgr::TimerNodeQueue::hasNode(int id)
-{
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto it = std::find_if(timerNodeList_.begin(), timerNodeList_.end(),
-                           [id](const TimerNodeRefPtr & node)
-    {
-        return node->id_ == id && node->valid_;
-    });
-    return it != timerNodeList_.end();
-}
-
 
 TimerMgr::TimerMgr()
-    : timerNodeQueue_()
 {
-    timerTickThread_ = std::thread([this] { processTimerTick(); });
+    mainThreadAlive = true;
     timerHandlerThread_ = std::thread([this] { processTimerHandler(); });
 }
 
@@ -79,10 +26,6 @@ TimerMgr::~TimerMgr()
 {
     mainThreadAlive = false;
     cond_.notify_all();
-    if (timerTickThread_.joinable())
-    {
-        timerTickThread_.join();
-    }
     if (timerHandlerThread_.joinable())
     {
         timerHandlerThread_.join();
@@ -92,46 +35,89 @@ TimerMgr::~TimerMgr()
 Timer TimerMgr::createTimer(long long timeoutMicros, TimerCallback callback, bool periodic)
 {
     int id = timerId_.fetch_add(1);
-    return Timer(id, timeoutMicros, callback, periodic);
+    std::cout << "Create: Timer id " << id << " created with timeout " << timeoutMicros << " microseconds and periodic " << periodic << std::endl;
+    return Timer(id, timeoutMicros, std::move(callback), periodic);
 }
-void TimerMgr::processTimerTick()
+
+void TimerMgr::enqueueNode(const TimerNodeRefPtr& node)
 {
+    std::lock_guard<std::mutex> lock(mutex_);
+    queue_.push(node);
+    nodeMap_[node->id_] = node;
+    std::cout << "Enqueue: Timer id " << node->id_ << " enqueued with timeout " << node->timeout_ << std::endl;
+    cond_.notify_one();
+}
+
+TimerMgr::TimerNodeRefPtr TimerMgr::next()
+{
+    std::unique_lock<std::mutex> lock(mutex_);
+    cond_.wait(lock, [this] { return !queue_.empty() || !mainThreadAlive; });
+
+    if (!mainThreadAlive)
+    {
+        return nullptr;
+    }
+
+    while (!queue_.empty())
+    {
+        auto node = queue_.top();
+        queue_.pop();
+        if (node->valid_)
+        {
+            return node;
+        }
+    }
+    return nullptr;
+}
+
+void TimerMgr::removeTimer(int id)
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = nodeMap_.find(id);
+    if (it != nodeMap_.end())
+    {
+        it->second->valid_ = false;
+        nodeMap_.erase(it);
+    }
+}
+
+void TimerMgr::processTimerHandler()
+{
+    std::cout << "processTimerHandler: Thread started." << std::endl;
     while (mainThreadAlive)
     {
-        auto timerNode = timerNodeQueue_.next();
-        if (!timerNode || !timerNode->valid_)
+        auto node = next();
+        if (!node)
         {
             continue;
         }
-        if (timerNode->periodic_)
+
+        auto now = currentTimeMicros();
+        if (node->when_ <= now)
         {
-            timerNode->when_ = TimerMgr::currentTimeMicros() + timerNode->timeout_;
-            timerNodeQueue_.enqueueNode(timerNode);
+            std::cout << "Handler: Executing callback for timer id " << node->id_ << std::endl;
+            node->callback_();
+
+            if (node->periodic_ && node->valid_)
+            {
+                node->when_ = now + node->timeout_;
+                enqueueNode(node);
+            }
+            else
+            {
+                node->valid_ = false;
+                removeTimer(node->id_);
+            }
         }
         else
         {
-            timerNode->valid_ = false;
+            std::this_thread::sleep_for(std::chrono::microseconds(node->when_ - now));
+            enqueueNode(node);
         }
-        timerNodeList_->push_back(timerNode);
-        cond_.notify_one();
     }
+    std::cout << "processTimerHandler: Thread ended." << std::endl;
 }
-void TimerMgr::processTimerHandler()
-{
-    while (mainThreadAlive)
-    {
-        std::unique_lock<std::mutex> lock(mutex_);
-        cond_.wait(lock, [this] { return !timerNodeQueue_.empty(); });
-        auto timerNode = timerNodeQueue_.front();
-        timerNodeQueue_.pop_front();
-        lock.unlock();
 
-        if (timerNode && timerNode->valid_)
-        {
-            timerNode->callback_();
-        }
-    }
-}
 long long TimerMgr::currentTimeMicros()
 {
     auto now = std::chrono::time_point_cast<std::chrono::microseconds>(
@@ -140,32 +126,33 @@ long long TimerMgr::currentTimeMicros()
         std::chrono::duration_cast<std::chrono::microseconds>(now.time_since_epoch());
     return span.count();
 }
+
 bool TimerMgr::start(Timer& timer)
 {
-    std::lock_guard<std::mutex> lock(mutex_);
-    const auto& timerNode = timer.getTimerNode();
-    if (timerNodeQueue_.hasNode(timerNode.id_))
-    {
-        timerNodeQueue_.removeNode(timerNode.id_);
-    }
-    timerNodeQueue_.erase(std::remove(timerNodeQueue_.begin(), timerNodeQueue_.end(),
-                                      [&timerNode](const TimerNodeRefPtr & node)
-    {
-        return node->id_ == timerNode.id_;
-    }), timerNodeQueue_.end()));
-    timer.start(currentTimeMicros());
-    return timerNodeQueue_.enqueueNode(timerNode, timerNode->when_);
+    auto timerNode = timer.getTimerNode();
+    long long currentTime = currentTimeMicros();
+    timer.start(currentTime);
+    std::cout << "Start: Timer id " << timerNode->id_ << " started at " << timerNode->when_ << std::endl;
+    enqueueNode(timerNode);
+    return true;
 }
+
 void TimerMgr::stop(Timer& timer)
 {
-    MutexType::Lock lock(mutex_);
-    const auto& timerNode = timer.getTimerNode();
-    timerNodeQueue_.erase(std::remove(timerNodeQueue_.begin(), timerNodeQueue_.end(),
-                                      [&timerNode](const TimerNodeRefPtr & node)
+    auto timerNode = timer.getTimerNode();
+    if (timerNode)
     {
-        return node->id_ == timerNode.id_;
-    }),
-    timerNodeQueue_.end()));
-    timer.stop();
+        timerNode->valid_ = false;
+        removeTimer(timerNode->id_);
+        std::cout << "Stop: Timer id " << timerNode->id_ << " stopped" << std::endl;
+        cond_.notify_one();
+    }
 }
+
+size_t TimerMgr::getActiveTimerCount() const
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    return nodeMap_.size();
 }
+
+} // namespace Nazl

@@ -7,7 +7,7 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
 add_library(common SHARED
         config.cpp
-       # timer.cpp
+        timer.cpp
         file_ops.cpp
         log/log.cpp
         pool/thread_pool.cpp

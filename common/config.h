@@ -5,13 +5,15 @@
 #ifndef COMMON_CONFIG_H
 #define COMMON_CONFIG_H
 #include <sstream>
+#include <iostream>
 #include <memory>
 #include <variant>
 #include <string>
 #include <unordered_map>
+#include <atomic>
 #include <yaml-cpp/yaml.h>
+#include <mutex>
 #include <regex>
-#include "mutex.h"
 namespace Nazl
 {
 class BaseConfigItem
@@ -67,8 +69,6 @@ private:
 class Config
 {
 public:
-    using MutexType = Nazl::Mutex;
-
     Config(const std::string &fileName) : fileName_(fileName) {}
 
     ~Config() = default;
@@ -87,24 +87,13 @@ private:
 
     std::string fileName_;
     std::unordered_map<std::string, std::shared_ptr<BaseConfigItem>> items_;
-    MutexType mutex_;
+    std::mutex mutex_;
 };
 
-/*template <typename T>
-std::shared_ptr<ConfigItem<T>> Config::getItem(const std::string &name)
-{
-    MutexType::Lock lock(mutex_);
-    auto it = items_.find(name);
-    if (it != items_.end())
-    {
-        return std::dynamic_pointer_cast<ConfigItem<T>>(it->second);
-    }
-    return nullptr;
-}*/
 template <typename T>
 std::shared_ptr<ConfigItem<T>> Config::getItem(const std::string &name)
 {
-    MutexType::Lock lock(mutex_);
+    std::lock_guard<std::mutex> lock(mutex_);
     auto it = items_.find(name);
     if (it != items_.end())
     {
