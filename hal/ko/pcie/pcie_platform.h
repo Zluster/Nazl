@@ -1,0 +1,8 @@
+//
+// Created by zwz on 2024/10/22.
+//
+
+#ifndef NAZL_HAL_KO_PCIE_PCIE_PLATFORM_H_
+#define NAZL_HAL_KO_PCIE_PCIE_PLATFORM_H_
+
+#endif //NAZL_HAL_KO_PCIE_PCIE_PLATFORM_H_
